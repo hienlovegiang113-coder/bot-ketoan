@@ -1,0 +1,1 @@
+worker: python ke toan discord.py
