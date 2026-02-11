@@ -3,6 +3,8 @@ from discord.ext import commands, tasks
 import os
 import pytesseract, cv2, requests, re, sqlite3
 import numpy as np
+import asyncio
+import re
 from datetime import datetime
 
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
@@ -53,6 +55,41 @@ async def on_message(message):
     if message.author.bot:
         return
 
+# ===== HẸN GIỜ ĐẾM NGƯỢC =====
+msg = message.content.lower().replace(" ", "")
+
+match = re.search(r'(\d+)(?:h)?(?:(\d+)p?)?', msg)
+
+if match:
+    hours = match.group(1)
+    mins = match.group(2)
+
+    total_seconds = 0
+
+    # có chữ h
+    if "h" in msg:
+        total_seconds += int(hours) * 3600
+        if mins:
+            total_seconds += int(mins) * 60
+    else:
+        # chỉ phút
+        total_seconds += int(hours) * 60
+
+    if total_seconds > 0:
+        name = message.content.split()[0]
+
+        await message.channel.send(
+            f"⏰ {name} đã đặt giờ: {msg}"
+        )
+
+        async def timer():
+            await asyncio.sleep(total_seconds)
+            await message.channel.send(
+                f"🚨 HẾT GIỜ {name} — {message.content}"
+            )
+
+        bot.loop.create_task(timer())
+        
     # ==============================
     # BLACKLIST CHANNEL
     # ==============================
@@ -129,6 +166,7 @@ async def on_ready():
     print("🔥 BOT ONLINE!!!")
     daily_report.start()
 bot.run(TOKEN)
+
 
 
 
