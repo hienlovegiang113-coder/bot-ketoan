@@ -5,6 +5,8 @@ import pytesseract, cv2, requests, re, sqlite3
 import numpy as np
 from datetime import datetime
 
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+
 TOKEN = os.getenv("TOKEN")
 
 CHANNEL_THUE_XE = 1439183974646681641
@@ -127,6 +129,7 @@ async def on_ready():
     print("🔥 BOT ONLINE!!!")
     daily_report.start()
 bot.run(TOKEN)
+
 
 
 
