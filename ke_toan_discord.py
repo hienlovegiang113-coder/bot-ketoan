@@ -88,7 +88,7 @@ async def on_message(message):
 
             bot.loop.create_task(timer())
 
-        
+        await bot.process_commands(message)
     # ==============================
     # BLACKLIST CHANNEL
     # ==============================
@@ -165,6 +165,7 @@ async def on_ready():
     print("🔥 BOT ONLINE!!!")
     daily_report.start()
 bot.run(TOKEN)
+
 
 
 
