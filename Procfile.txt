@@ -1,0 +1,1 @@
+worker: python ke_toan_discord.py
