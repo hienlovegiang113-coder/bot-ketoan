@@ -60,7 +60,7 @@ msg = message.content.lower().replace(" ", "")
 
 match = re.search(r'(\d+)(?:h)?(?:(\d+)p?)?', msg)
 
-if match:
+    if match:
     hours = match.group(1)
     mins = match.group(2)
 
@@ -166,6 +166,7 @@ async def on_ready():
     print("🔥 BOT ONLINE!!!")
     daily_report.start()
 bot.run(TOKEN)
+
 
 
 
