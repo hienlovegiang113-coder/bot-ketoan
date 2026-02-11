@@ -1,5 +1,4 @@
 import discord
-import os
 from discord.ext import commands, tasks
 import pytesseract, cv2, requests, re, sqlite3
 import numpy as np
@@ -133,6 +132,7 @@ async def on_ready():
     print("🔥 BOT ONLINE!!!")
     daily_report.start()
 bot.run(TOKEN)
+
 
 
 
