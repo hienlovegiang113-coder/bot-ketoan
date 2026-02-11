@@ -73,17 +73,24 @@ async def on_message(message):
     # ==============================
     # THUÊ XE CHANNEL
     # ==============================
-    if message.channel.id == CHANNEL_THUE_XE:
+  if message.channel.id == CHANNEL_THUE_XE:
 
-        # đọc tiền
-        money = extract_money(message.content)
-        if money>0:
-            daily_total += money
+    # đọc tiền từ text chat (nếu có)
+    money = extract_money(message.content)
+    if money > 0:
+        daily_total += money
 
-        # đọc ảnh
-        for att in message.attachments:
-            text = read_img(att.url)
-            names = detect_names(text)
+    # đọc từ ảnh
+    for att in message.attachments:
+        text = read_img(att.url)
+
+        # 👉 cộng tiền từ ảnh
+        money_img = extract_money(text)
+        if money_img > 0:
+            daily_total += money_img
+            await message.channel.send(f"💰 +{money_img:,}đ")
+
+        names = detect_names(text)
 
             for name in names:
 
@@ -130,6 +137,7 @@ async def on_ready():
     print("🔥 BOT ONLINE!!!")
     daily_report.start()
 bot.run(TOKEN)
+
 
 
 
