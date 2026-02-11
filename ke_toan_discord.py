@@ -54,39 +54,38 @@ async def on_message(message):
 
     if message.author.bot:
         return
-
+        
 # ===== HẸN GIỜ ĐẾM NGƯỢC =====
+import asyncio, re
+
 msg = message.content.lower().replace(" ", "")
 
-match = re.search(r'(\d+)(?:h)?(?:(\d+)p?)?', msg)
+match = re.search(r'(\d+h\d+p|\d+h|\d+p)', msg)
 
-    if match:
-    hours = match.group(1)
-    mins = match.group(2)
+if match:
+    time_str = match.group()
 
-    total_seconds = 0
+    hours = 0
+    mins = 0
 
-    # có chữ h
-    if "h" in msg:
-        total_seconds += int(hours) * 3600
-        if mins:
-            total_seconds += int(mins) * 60
-    else:
-        # chỉ phút
-        total_seconds += int(hours) * 60
+    h = re.search(r'(\d+)h', time_str)
+    m = re.search(r'(\d+)p', time_str)
+
+    if h:
+        hours = int(h.group(1))
+    if m:
+        mins = int(m.group(1))
+
+    total_seconds = hours*3600 + mins*60
 
     if total_seconds > 0:
         name = message.content.split()[0]
 
-        await message.channel.send(
-            f"⏰ {name} đã đặt giờ: {msg}"
-        )
+        await message.channel.send(f"⏰ {name} đã đặt giờ {time_str}")
 
         async def timer():
             await asyncio.sleep(total_seconds)
-            await message.channel.send(
-                f"🚨 HẾT GIỜ {name} — {message.content}"
-            )
+            await message.channel.send(f"🚨 HẾT GIỜ {name} - {message.content}")
 
         bot.loop.create_task(timer())
         
@@ -166,6 +165,7 @@ async def on_ready():
     print("🔥 BOT ONLINE!!!")
     daily_report.start()
 bot.run(TOKEN)
+
 
 
 
