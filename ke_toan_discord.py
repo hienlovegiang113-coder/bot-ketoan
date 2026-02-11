@@ -43,12 +43,6 @@ def extract_money(text):
     nums = re.findall(r'(\d+)k', text.lower())
     return sum(int(n)*1000 for n in nums)
 
-# ===== READY =====
-@bot.event
-async def on_ready():
-    print("BOT ONLINE")
-    daily_report.start()
-
 # ===== MESSAGE =====
 @bot.event
 async def on_message(message):
@@ -137,6 +131,7 @@ async def on_ready():
     print("🔥 BOT ONLINE!!!")
     daily_report.start()
 bot.run(TOKEN)
+
 
 
 
