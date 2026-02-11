@@ -8,7 +8,7 @@ from datetime import datetime
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 
-TOKEN = "YOUR_TOKEN"
+TOKEN = os.getenv("TOKEN")
 
 CHANNEL_THUE_XE = 1439183974646681641
 CHANNEL_CHOT_SO = 1439184035271151667
@@ -133,3 +133,4 @@ async def on_ready():
     print("🔥 BOT ONLINE!!!")
     daily_report.start()
 bot.run(TOKEN)
+
