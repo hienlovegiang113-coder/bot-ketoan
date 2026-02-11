@@ -51,41 +51,43 @@ def extract_money(text):
 @bot.event
 async def on_message(message):
     global daily_total
+    import asyncio, re
 
     if message.author.bot:
         return
-        import asyncio, re
 
-msg = message.content.lower().replace(" ", "")
+    msg = message.content.lower().replace(" ", "")
 
-match = re.search(r'(\d+h\d+p|\d+h|\d+p)', msg)
+    # ===== TIMER =====
+    match = re.search(r'(\d+h\d+p|\d+h|\d+p)', msg)
 
-if match:
-    time_str = match.group()
+    if match:
+        time_str = match.group()
 
-    hours = 0
-    mins = 0
+        hours = 0
+        mins = 0
 
-    h = re.search(r'(\d+)h', time_str)
-    m = re.search(r'(\d+)p', time_str)
+        h = re.search(r'(\d+)h', time_str)
+        m = re.search(r'(\d+)p', time_str)
 
-    if h:
-        hours = int(h.group(1))
-    if m:
-        mins = int(m.group(1))
+        if h:
+            hours = int(h.group(1))
+        if m:
+            mins = int(m.group(1))
 
-    total_seconds = hours*3600 + mins*60
+        total_seconds = hours*3600 + mins*60
 
-    if total_seconds > 0:
-        name = message.author.display_name
+        if total_seconds > 0:
+            name = message.author.display_name
 
-        await message.channel.send(f"⏰ {name} đã đặt giờ {time_str}")
+            await message.channel.send(f"⏰ {name} đã đặt giờ {time_str}")
 
-        async def timer():
-            await asyncio.sleep(total_seconds)
-            await message.channel.send(f"🚨 HẾT GIỜ {name} - {message.content}")
+            async def timer():
+                await asyncio.sleep(total_seconds)
+                await message.channel.send(f"🔔 HẾT GIỜ {name} - {message.content}")
 
-        bot.loop.create_task(timer())
+            bot.loop.create_task(timer())
+
         
     # ==============================
     # BLACKLIST CHANNEL
@@ -163,6 +165,7 @@ async def on_ready():
     print("🔥 BOT ONLINE!!!")
     daily_report.start()
 bot.run(TOKEN)
+
 
 
 
