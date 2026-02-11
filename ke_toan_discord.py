@@ -52,7 +52,7 @@ async def on_message(message):
         return
 
     # ==============================
-    # BLACKLIST CHANNEL (lưu tên)
+    # BLACKLIST CHANNEL
     # ==============================
     if message.channel.id == CHANNEL_BLACKLIST:
         for att in message.attachments:
@@ -67,38 +67,35 @@ async def on_message(message):
     # ==============================
     # THUÊ XE CHANNEL
     # ==============================
-  if message.channel.id == CHANNEL_THUE_XE:
+    if message.channel.id == CHANNEL_THUE_XE:
 
-    # đọc tiền từ text chat (nếu có)
-    money = extract_money(message.content)
-    if money > 0:
-        daily_total += money
+        # đọc tiền text
+        money = extract_money(message.content)
+        if money > 0:
+            daily_total += money
+            await message.channel.send(f"💰 +{money:,}đ")
 
-    # đọc từ ảnh
-    for att in message.attachments:
-        text = read_img(att.url)
+        # đọc ảnh
+        for att in message.attachments:
+            text = read_img(att.url)
 
-        # 👉 cộng tiền từ ảnh
-        money_img = extract_money(text)
-        if money_img > 0:
-            daily_total += money_img
-            await message.channel.send(f"💰 +{money_img:,}đ")
+            money_img = extract_money(text)
+            if money_img > 0:
+                daily_total += money_img
+                await message.channel.send(f"💰 +{money_img:,}đ")
 
-        names = detect_names(text)
+            names = detect_names(text)
 
             for name in names:
-
-                # check blacklist
                 cur.execute("SELECT name FROM blacklist WHERE name=?",(name,))
                 if cur.fetchone():
-                    await message.channel.send(f"🚨 CẢNH BÁO BLACKLIST: {name}")
+                    await message.channel.send(f"🚨 BLACKLIST: {name}")
 
-                # loyal customer
                 cur.execute("SELECT count FROM loyal WHERE name=?",(name,))
                 row = cur.fetchone()
 
                 if row:
-                    new = row[0]+1
+                    new = row[0] + 1
                     cur.execute("UPDATE loyal SET count=? WHERE name=?",(new,name))
                 else:
                     new = 1
@@ -106,13 +103,12 @@ async def on_message(message):
 
                 conn.commit()
 
-                if new==5:
+                if new == 5:
                     await message.channel.send(f"🌟 KHÁCH THÂN: {name} (5 lần)")
-                if new>5:
+                if new > 5:
                     await message.channel.send(f"💎 {name} đã thuê {new} lần")
 
     await bot.process_commands(message)
-
 # ==============================
 # CHỐT SỔ NGÀY
 # ==============================
@@ -131,6 +127,7 @@ async def on_ready():
     print("🔥 BOT ONLINE!!!")
     daily_report.start()
 bot.run(TOKEN)
+
 
 
 
