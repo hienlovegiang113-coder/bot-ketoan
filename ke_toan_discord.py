@@ -4,7 +4,6 @@ import os
 import pytesseract, cv2, requests, re, sqlite3
 import numpy as np
 import asyncio
-import re
 from datetime import datetime
 
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
@@ -14,14 +13,17 @@ TOKEN = os.getenv("TOKEN")
 CHANNEL_THUE_XE = 1439183974646681641
 CHANNEL_CHOT_SO = 1439184035271151667
 CHANNEL_BLACKLIST = 1462332169333772360
+CHANNEL_COUNTDOWN = 1473627587912667209
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 daily_total = 0
+timers = {}
+countdown_message = None
 
-# ===== database =====
+# ===== DATABASE =====
 conn = sqlite3.connect("data.db")
 cur = conn.cursor()
 
@@ -29,7 +31,79 @@ cur.execute("CREATE TABLE IF NOT EXISTS blacklist(name TEXT)")
 cur.execute("CREATE TABLE IF NOT EXISTS loyal(name TEXT,count INTEGER)")
 conn.commit()
 
-# ===== OCR =====
+# ==============================
+# LẤY / TẠO MESSAGE COUNTDOWN
+# ==============================
+async def get_countdown_message():
+    global countdown_message
+    channel = bot.get_channel(CHANNEL_COUNTDOWN)
+
+    if countdown_message:
+        return countdown_message
+
+    async for msg in channel.history(limit=20):
+        if msg.author == bot.user:
+            countdown_message = msg
+            return msg
+
+    countdown_message = await channel.send("Đang khởi tạo bảng countdown...")
+    return countdown_message
+
+# ==============================
+# UPDATE EMBED
+# ==============================
+async def update_embed():
+    msg = await get_countdown_message()
+
+    embed = discord.Embed(
+        title="📊 BẢNG ĐẾM NGƯỢC",
+        color=discord.Color.green()
+    )
+
+    if not timers:
+        embed.description = "Không có ai đang đếm giờ"
+    else:
+        sorted_timers = sorted(
+            timers.items(),
+            key=lambda x: x[1] - datetime.now().timestamp()
+        )
+
+        desc = ""
+        for name, end_time in sorted_timers:
+            remaining = int(end_time - datetime.now().timestamp())
+
+            if remaining <= 0:
+                continue
+
+            h = remaining // 3600
+            m = (remaining % 3600) // 60
+            s = remaining % 60
+
+            desc += f"**{name}** ➜ `{h:02}:{m:02}:{s:02}`\n"
+
+        embed.description = desc if desc else "Không có ai đang đếm giờ"
+
+    await msg.edit(embed=embed)
+
+# ==============================
+# LOOP UPDATE 5s
+# ==============================
+@tasks.loop(seconds=5)
+async def countdown_loop():
+    to_remove = []
+
+    for name, end_time in timers.items():
+        if int(end_time - datetime.now().timestamp()) <= 0:
+            to_remove.append(name)
+
+    for name in to_remove:
+        del timers[name]
+
+    await update_embed()
+
+# ==============================
+# OCR
+# ==============================
 def read_img(url):
     resp = requests.get(url)
     arr = np.asarray(bytearray(resp.content), dtype=np.uint8)
@@ -47,11 +121,12 @@ def extract_money(text):
     nums = re.findall(r'(\d+)k', text.lower())
     return sum(int(n)*1000 for n in nums)
 
-# ===== MESSAGE =====
+# ==============================
+# MESSAGE EVENT
+# ==============================
 @bot.event
 async def on_message(message):
     global daily_total
-    import asyncio, re
 
     if message.author.bot:
         return
@@ -79,74 +154,70 @@ async def on_message(message):
 
         if total_seconds > 0:
             name = message.author.display_name
+            end_time = datetime.now().timestamp() + total_seconds
+            timers[name] = end_time
 
-            await message.channel.send(f"⏰ {name} đã đặt giờ {time_str}")
+            await message.channel.send(f"⏰ {name} đã đặt {time_str}")
+            await update_embed()
 
-            async def timer():
-                await asyncio.sleep(total_seconds)
-                await message.channel.send(f"🔔 HẾT GIỜ {name} - {message.content}")
-
-            bot.loop.create_task(timer())
-
-        await bot.process_commands(message)
-    # ==============================
-    # BLACKLIST CHANNEL
-    # ==============================
+    # ===== BLACKLIST =====
     if message.channel.id == CHANNEL_BLACKLIST:
         for att in message.attachments:
             text = read_img(att.url)
             names = detect_names(text)
-
             for name in names:
                 cur.execute("INSERT INTO blacklist VALUES(?)",(name,))
                 conn.commit()
                 await message.channel.send(f"⛔ Đã lưu blacklist: {name}")
 
-    # ==============================
-    # THUÊ XE CHANNEL
-    # ==============================
+    # ===== THUÊ XE =====
     if message.channel.id == CHANNEL_THUE_XE:
-
-        # đọc tiền text
         money = extract_money(message.content)
         if money > 0:
             daily_total += money
             await message.channel.send(f"💰 +{money:,}đ")
 
-        # đọc ảnh
-        for att in message.attachments:
-            text = read_img(att.url)
-
-            money_img = extract_money(text)
-            if money_img > 0:
-                daily_total += money_img
-                await message.channel.send(f"💰 +{money_img:,}đ")
-
-            names = detect_names(text)
-
-            for name in names:
-                cur.execute("SELECT name FROM blacklist WHERE name=?",(name,))
-                if cur.fetchone():
-                    await message.channel.send(f"🚨 BLACKLIST: {name}")
-
-                cur.execute("SELECT count FROM loyal WHERE name=?",(name,))
-                row = cur.fetchone()
-
-                if row:
-                    new = row[0] + 1
-                    cur.execute("UPDATE loyal SET count=? WHERE name=?",(new,name))
-                else:
-                    new = 1
-                    cur.execute("INSERT INTO loyal VALUES(?,?)",(name,1))
-
-                conn.commit()
-
-                if new == 5:
-                    await message.channel.send(f"🌟 KHÁCH THÂN: {name} (5 lần)")
-                if new > 5:
-                    await message.channel.send(f"💎 {name} đã thuê {new} lần")
-
     await bot.process_commands(message)
+
+# ==============================
+# !doi user1 user2
+# ==============================
+@bot.command()
+async def doi(ctx, user1: str, user2: str):
+
+    key1 = None
+    key2 = None
+
+    for name in timers.keys():
+        if name.lower() == user1.lower():
+            key1 = name
+        if name.lower() == user2.lower():
+            key2 = name
+
+    if not key1 or not key2:
+        await ctx.send("❌ Một trong hai người không có giờ")
+        return
+
+    timers[key1], timers[key2] = timers[key2], timers[key1]
+
+    await ctx.send(f"🔄 Đã đổi giờ giữa {key1} và {key2}")
+    await update_embed()
+
+# ==============================
+# !huygio
+# ==============================
+@bot.command()
+async def huygio(ctx):
+    name = ctx.author.display_name
+
+    if name not in timers:
+        await ctx.send("❌ Bạn không có giờ để hủy")
+        return
+
+    del timers[name]
+    await ctx.send("🗑 Đã hủy giờ của bạn")
+    await update_embed()
+
 # ==============================
 # CHỐT SỔ NGÀY
 # ==============================
@@ -155,23 +226,22 @@ async def daily_report():
     global daily_total
     now = datetime.now()
 
-    if now.hour==0 and now.minute==0:
+    if now.hour == 0 and now.minute == 0:
         ch = bot.get_channel(CHANNEL_CHOT_SO)
         if ch:
             await ch.send(f"📊 TỔNG THU HÔM NAY: {daily_total:,}")
-        daily_total=0
+        daily_total = 0
+
+# ==============================
+# READY
+# ==============================
 @bot.event
 async def on_ready():
     print("🔥 BOT ONLINE!!!")
+    countdown_loop.start()
     daily_report.start()
+
 bot.run(TOKEN)
-
-
-
-
-
-
-
 
 
 
