@@ -19,7 +19,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 daily_total = 0
-timers = []  # {name, end, money}
+timers = []
 countdown_message = None
 
 # ==============================
@@ -98,7 +98,7 @@ async def countdown_loop():
     expired = []
 
     for t in timers:
-        if int(t["end"] - now) <= 0:
+        if t["end"] <= now:
             expired.append(t)
 
     for t in expired:
@@ -106,7 +106,8 @@ async def countdown_loop():
         if channel:
             await channel.send(f"🔔 {t['name']} đã hết giờ rồi!")
 
-        timers.remove(t)
+        if t in timers:
+            timers.remove(t)
 
     await update_embed()
 
@@ -185,7 +186,7 @@ async def on_message(message):
                 conn.commit()
                 await message.channel.send(f"⛔ Đã lưu blacklist: {name}")
 
-    # ===== THUÊ XE =====
+    # ===== THUÊ XE (CỘNG TIỀN) =====
     if message.channel.id == CHANNEL_THUE_XE:
         money = extract_money(message.content)
         if money > 0:
@@ -266,7 +267,6 @@ async def on_ready():
     await update_embed()
 
 bot.run(TOKEN)
-
 
 
 
