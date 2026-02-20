@@ -92,7 +92,7 @@ async def update_embed():
 # ==============================
 # LOOP COUNTDOWN + THÔNG BÁO HẾT GIỜ
 # ==============================
-@tasks.loop(seconds=1)
+@tasks.loop(seconds=5)
 async def countdown_loop():
     now = datetime.now().timestamp()
     expired = []
@@ -267,6 +267,7 @@ async def on_ready():
     await update_embed()
 
 bot.run(TOKEN)
+
 
 
 
