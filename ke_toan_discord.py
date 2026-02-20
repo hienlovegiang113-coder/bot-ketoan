@@ -3,7 +3,6 @@ from discord.ext import commands, tasks
 import os
 import pytesseract, cv2, requests, re, sqlite3
 import numpy as np
-import asyncio
 from datetime import datetime
 
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
@@ -23,10 +22,11 @@ daily_total = 0
 timers = {}
 countdown_message = None
 
-# ===== DATABASE =====
+# ==============================
+# DATABASE
+# ==============================
 conn = sqlite3.connect("data.db")
 cur = conn.cursor()
-
 cur.execute("CREATE TABLE IF NOT EXISTS blacklist(name TEXT)")
 cur.execute("CREATE TABLE IF NOT EXISTS loyal(name TEXT,count INTEGER)")
 conn.commit()
@@ -36,10 +36,13 @@ conn.commit()
 # ==============================
 async def get_countdown_message():
     global countdown_message
-    channel = bot.get_channel(CHANNEL_COUNTDOWN)
 
     if countdown_message:
         return countdown_message
+
+    channel = bot.get_channel(CHANNEL_COUNTDOWN)
+    if not channel:
+        return None
 
     async for msg in channel.history(limit=20):
         if msg.author == bot.user:
@@ -54,46 +57,48 @@ async def get_countdown_message():
 # ==============================
 async def update_embed():
     msg = await get_countdown_message()
+    if not msg:
+        return
 
     embed = discord.Embed(
         title="📊 BẢNG ĐẾM NGƯỢC",
         color=discord.Color.green()
     )
 
-    if not timers:
+    now = datetime.now().timestamp()
+    active_list = []
+
+    for name, end_time in timers.items():
+        remaining = int(end_time - now)
+        if remaining > 0:
+            active_list.append((name, remaining))
+
+    if not active_list:
         embed.description = "Không có ai đang đếm giờ"
     else:
-        sorted_timers = sorted(
-            timers.items(),
-            key=lambda x: x[1] - datetime.now().timestamp()
-        )
-
+        active_list.sort(key=lambda x: x[1])
         desc = ""
-        for name, end_time in sorted_timers:
-            remaining = int(end_time - datetime.now().timestamp())
 
-            if remaining <= 0:
-                continue
-
+        for name, remaining in active_list:
             h = remaining // 3600
             m = (remaining % 3600) // 60
             s = remaining % 60
-
             desc += f"**{name}** ➜ `{h:02}:{m:02}:{s:02}`\n"
 
-        embed.description = desc if desc else "Không có ai đang đếm giờ"
+        embed.description = desc
 
     await msg.edit(embed=embed)
 
 # ==============================
-# LOOP UPDATE 5s
+# LOOP UPDATE 1s
 # ==============================
-@tasks.loop(seconds=5)
+@tasks.loop(seconds=1)
 async def countdown_loop():
+    now = datetime.now().timestamp()
     to_remove = []
 
     for name, end_time in timers.items():
-        if int(end_time - datetime.now().timestamp()) <= 0:
+        if int(end_time - now) <= 0:
             to_remove.append(name)
 
     for name in to_remove:
@@ -109,7 +114,7 @@ def read_img(url):
     arr = np.asarray(bytearray(resp.content), dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray,None,fx=2,fy=2)
+    gray = cv2.resize(gray, None, fx=2, fy=2)
     text = pytesseract.image_to_string(gray, lang="eng+jpn+vie")
     return text
 
@@ -119,7 +124,7 @@ def detect_names(text):
 
 def extract_money(text):
     nums = re.findall(r'(\d+)k', text.lower())
-    return sum(int(n)*1000 for n in nums)
+    return sum(int(n) * 1000 for n in nums)
 
 # ==============================
 # MESSAGE EVENT
@@ -138,7 +143,6 @@ async def on_message(message):
 
     if match:
         time_str = match.group()
-
         hours = 0
         mins = 0
 
@@ -150,7 +154,7 @@ async def on_message(message):
         if m:
             mins = int(m.group(1))
 
-        total_seconds = hours*3600 + mins*60
+        total_seconds = hours * 3600 + mins * 60
 
         if total_seconds > 0:
             name = message.author.display_name
@@ -166,7 +170,7 @@ async def on_message(message):
             text = read_img(att.url)
             names = detect_names(text)
             for name in names:
-                cur.execute("INSERT INTO blacklist VALUES(?)",(name,))
+                cur.execute("INSERT INTO blacklist VALUES(?)", (name,))
                 conn.commit()
                 await message.channel.send(f"⛔ Đã lưu blacklist: {name}")
 
@@ -184,7 +188,6 @@ async def on_message(message):
 # ==============================
 @bot.command()
 async def doi(ctx, user1: str, user2: str):
-
     key1 = None
     key2 = None
 
@@ -207,15 +210,38 @@ async def doi(ctx, user1: str, user2: str):
 # !huygio
 # ==============================
 @bot.command()
-async def huygio(ctx):
-    name = ctx.author.display_name
+async def huygio(ctx, user: str = None):
 
-    if name not in timers:
-        await ctx.send("❌ Bạn không có giờ để hủy")
+    # Nếu không ghi tên → xoá chính mình
+    if user is None:
+        name = ctx.author.display_name
+
+        if name not in timers:
+            await ctx.send("❌ Bạn không có giờ để hủy")
+            return
+
+        del timers[name]
+        await ctx.send(f"🗑 Đã hủy giờ của {name}")
+        await update_embed()
         return
 
-    del timers[name]
-    await ctx.send("🗑 Đã hủy giờ của bạn")
+    # Nếu có ghi tên → chỉ Admin mới được xoá
+    if not ctx.author.guild_permissions.administrator:
+        await ctx.send("❌ Bạn không có quyền xoá giờ người khác")
+        return
+
+    target = None
+    for name in timers.keys():
+        if name.lower() == user.lower():
+            target = name
+            break
+
+    if not target:
+        await ctx.send("❌ Người này không có giờ")
+        return
+
+    del timers[target]
+    await ctx.send(f"🗑 Đã hủy giờ của {target}")
     await update_embed()
 
 # ==============================
@@ -238,13 +264,16 @@ async def daily_report():
 @bot.event
 async def on_ready():
     print("🔥 BOT ONLINE!!!")
-    countdown_loop.start()
-    daily_report.start()
+
+    if not countdown_loop.is_running():
+        countdown_loop.start()
+
+    if not daily_report.is_running():
+        daily_report.start()
+
+    await update_embed()
 
 bot.run(TOKEN)
-
-
-
 
 
 
