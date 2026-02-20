@@ -19,7 +19,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 daily_total = 0
-timers = {}
+timers = []  # mỗi phần tử: {name, end, money}
 countdown_message = None
 
 # ==============================
@@ -68,10 +68,10 @@ async def update_embed():
     now = datetime.now().timestamp()
     active_list = []
 
-    for name, end_time in timers.items():
-        remaining = int(end_time - now)
+    for data in timers:
+        remaining = int(data["end"] - now)
         if remaining > 0:
-            active_list.append((name, remaining))
+            active_list.append((data["name"], remaining, data["money"]))
 
     if not active_list:
         embed.description = "Không có ai đang đếm giờ"
@@ -79,11 +79,11 @@ async def update_embed():
         active_list.sort(key=lambda x: x[1])
         desc = ""
 
-        for name, remaining in active_list:
+        for name, remaining, money in active_list:
             h = remaining // 3600
             m = (remaining % 3600) // 60
             s = remaining % 60
-            desc += f"**{name}** ➜ `{h:02}:{m:02}:{s:02}`\n"
+            desc += f"**{name}** ➜ `{h:02}:{m:02}:{s:02}` | {money}k\n"
 
         embed.description = desc
 
@@ -95,15 +95,7 @@ async def update_embed():
 @tasks.loop(seconds=1)
 async def countdown_loop():
     now = datetime.now().timestamp()
-    to_remove = []
-
-    for name, end_time in timers.items():
-        if int(end_time - now) <= 0:
-            to_remove.append(name)
-
-    for name in to_remove:
-        del timers[name]
-
+    timers[:] = [t for t in timers if int(t["end"] - now) > 0]
     await update_embed()
 
 # ==============================
@@ -136,13 +128,16 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    msg = message.content.lower().replace(" ", "")
+    content = message.content.lower()
 
-    # ===== TIMER =====
-    match = re.search(r'(\d+h\d+p|\d+h|\d+p)', msg)
+    # ===== NAME + TIME + MONEY =====
+    match_full = re.search(r'(\w+)\s+(\d+h\d*p?|\d+h|\d+p)\s+(\d+)k', content)
 
-    if match:
-        time_str = match.group()
+    if match_full:
+        name = match_full.group(1)
+        time_str = match_full.group(2)
+        money = match_full.group(3)
+
         hours = 0
         mins = 0
 
@@ -157,11 +152,15 @@ async def on_message(message):
         total_seconds = hours * 3600 + mins * 60
 
         if total_seconds > 0:
-            name = message.author.display_name
             end_time = datetime.now().timestamp() + total_seconds
-            timers[name] = end_time
 
-            await message.channel.send(f"⏰ {name} đã đặt {time_str}")
+            timers.append({
+                "name": name,
+                "end": end_time,
+                "money": money
+            })
+
+            await message.channel.send(f"⏰ Đã thêm {name} - {time_str} - {money}k")
             await update_embed()
 
     # ===== BLACKLIST =====
@@ -170,7 +169,7 @@ async def on_message(message):
             text = read_img(att.url)
             names = detect_names(text)
             for name in names:
-                cur.execute("INSERT INTO blacklist VALUES(?)", (name,))
+                cur.execute("INSERT INTO blacklist VALUES(?)",(name,))
                 conn.commit()
                 await message.channel.send(f"⛔ Đã lưu blacklist: {name}")
 
@@ -184,64 +183,45 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ==============================
-# !doi user1 user2
+# !huygio theo tên
 # ==============================
 @bot.command()
-async def doi(ctx, user1: str, user2: str):
-    key1 = None
-    key2 = None
+async def huygio(ctx, name: str):
+    removed = False
 
-    for name in timers.keys():
-        if name.lower() == user1.lower():
-            key1 = name
-        if name.lower() == user2.lower():
-            key2 = name
+    for t in timers[:]:
+        if t["name"].lower() == name.lower():
+            timers.remove(t)
+            removed = True
 
-    if not key1 or not key2:
-        await ctx.send("❌ Một trong hai người không có giờ")
-        return
-
-    timers[key1], timers[key2] = timers[key2], timers[key1]
-
-    await ctx.send(f"🔄 Đã đổi giờ giữa {key1} và {key2}")
-    await update_embed()
-
-# ==============================
-# !huygio
-# ==============================
-@bot.command()
-async def huygio(ctx, user: str = None):
-
-    # Nếu không ghi tên → xoá chính mình
-    if user is None:
-        name = ctx.author.display_name
-
-        if name not in timers:
-            await ctx.send("❌ Bạn không có giờ để hủy")
-            return
-
-        del timers[name]
-        await ctx.send(f"🗑 Đã hủy giờ của {name}")
+    if removed:
+        await ctx.send(f"🗑 Đã xoá timer của {name}")
         await update_embed()
+    else:
+        await ctx.send("❌ Không tìm thấy tên")
+
+# ==============================
+# !doi đổi 2 người
+# ==============================
+@bot.command()
+async def doi(ctx, name1: str, name2: str):
+
+    t1 = None
+    t2 = None
+
+    for t in timers:
+        if t["name"].lower() == name1.lower():
+            t1 = t
+        if t["name"].lower() == name2.lower():
+            t2 = t
+
+    if not t1 or not t2:
+        await ctx.send("❌ Không tìm thấy một trong hai tên")
         return
 
-    # Nếu có ghi tên → chỉ Admin mới được xoá
-    if not ctx.author.guild_permissions.administrator:
-        await ctx.send("❌ Bạn không có quyền xoá giờ người khác")
-        return
+    t1["end"], t2["end"] = t2["end"], t1["end"]
 
-    target = None
-    for name in timers.keys():
-        if name.lower() == user.lower():
-            target = name
-            break
-
-    if not target:
-        await ctx.send("❌ Người này không có giờ")
-        return
-
-    del timers[target]
-    await ctx.send(f"🗑 Đã hủy giờ của {target}")
+    await ctx.send(f"🔄 Đã đổi giờ giữa {name1} và {name2}")
     await update_embed()
 
 # ==============================
@@ -263,7 +243,7 @@ async def daily_report():
 # ==============================
 @bot.event
 async def on_ready():
-    print("🔥 BOT ONLINE!!!")
+    print("🔥 BOT ONLINE FULL VERSION!!!")
 
     if not countdown_loop.is_running():
         countdown_loop.start()
@@ -274,9 +254,6 @@ async def on_ready():
     await update_embed()
 
 bot.run(TOKEN)
-
-
-
 
 
 
