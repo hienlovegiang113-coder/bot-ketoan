@@ -19,7 +19,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 daily_total = 0
-timers = []  # mỗi phần tử: {name, end, money}
+timers = []  # {name, end, money}
 countdown_message = None
 
 # ==============================
@@ -90,12 +90,24 @@ async def update_embed():
     await msg.edit(embed=embed)
 
 # ==============================
-# LOOP UPDATE 1s
+# LOOP COUNTDOWN + THÔNG BÁO HẾT GIỜ
 # ==============================
 @tasks.loop(seconds=1)
 async def countdown_loop():
     now = datetime.now().timestamp()
-    timers[:] = [t for t in timers if int(t["end"] - now) > 0]
+    expired = []
+
+    for t in timers:
+        if int(t["end"] - now) <= 0:
+            expired.append(t)
+
+    for t in expired:
+        channel = bot.get_channel(CHANNEL_THUE_XE)
+        if channel:
+            await channel.send(f"🔔 {t['name']} đã hết giờ rồi!")
+
+        timers.remove(t)
+
     await update_embed()
 
 # ==============================
@@ -183,7 +195,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ==============================
-# !huygio theo tên
+# !huygio
 # ==============================
 @bot.command()
 async def huygio(ctx, name: str):
@@ -201,7 +213,7 @@ async def huygio(ctx, name: str):
         await ctx.send("❌ Không tìm thấy tên")
 
 # ==============================
-# !doi đổi 2 người
+# !doi
 # ==============================
 @bot.command()
 async def doi(ctx, name1: str, name2: str):
@@ -254,9 +266,6 @@ async def on_ready():
     await update_embed()
 
 bot.run(TOKEN)
-
-
-
 
 
 
