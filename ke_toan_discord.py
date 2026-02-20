@@ -21,6 +21,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 daily_total = 0
 timers = []
 countdown_message = None
+last_embed_content = None
 
 # ==============================
 # DATABASE
@@ -53,17 +54,14 @@ async def get_countdown_message():
     return countdown_message
 
 # ==============================
-# UPDATE EMBED
+# UPDATE EMBED (ANTI 429)
 # ==============================
 async def update_embed():
+    global last_embed_content
+
     msg = await get_countdown_message()
     if not msg:
         return
-
-    embed = discord.Embed(
-        title="📊 BẢNG ĐẾM NGƯỢC",
-        color=discord.Color.green()
-    )
 
     now = datetime.now().timestamp()
     active_list = []
@@ -74,7 +72,7 @@ async def update_embed():
             active_list.append((data["name"], remaining, data["money"]))
 
     if not active_list:
-        embed.description = "Không có ai đang đếm giờ"
+        new_content = "Không có ai đang đếm giờ"
     else:
         active_list.sort(key=lambda x: x[1])
         desc = ""
@@ -85,19 +83,32 @@ async def update_embed():
             s = remaining % 60
             desc += f"**{name}** ➜ `{h:02}:{m:02}:{s:02}` | {money}k\n"
 
-        embed.description = desc
+        new_content = desc
 
-    await msg.edit(embed=embed)
+    if new_content == last_embed_content:
+        return
+
+    embed = discord.Embed(
+        title="📊 BẢNG ĐẾM NGƯỢC",
+        description=new_content,
+        color=discord.Color.green()
+    )
+
+    try:
+        await msg.edit(embed=embed)
+        last_embed_content = new_content
+    except:
+        pass
 
 # ==============================
-# LOOP COUNTDOWN + THÔNG BÁO HẾT GIỜ
+# LOOP COUNTDOWN
 # ==============================
 @tasks.loop(seconds=5)
 async def countdown_loop():
     now = datetime.now().timestamp()
     expired = []
 
-    for t in timers:
+    for t in timers[:]:
         if t["end"] <= now:
             expired.append(t)
 
@@ -105,11 +116,10 @@ async def countdown_loop():
         channel = bot.get_channel(CHANNEL_THUE_XE)
         if channel:
             await channel.send(f"🔔 {t['name']} đã hết giờ rồi!")
+        timers.remove(t)
 
-        if t in timers:
-            timers.remove(t)
-
-    await update_embed()
+    if expired:
+        await update_embed()
 
 # ==============================
 # OCR
@@ -267,8 +277,6 @@ async def on_ready():
     await update_embed()
 
 bot.run(TOKEN)
-
-
 
 
 
