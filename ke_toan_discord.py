@@ -1,17 +1,14 @@
 import discord
 from discord.ext import commands, tasks
 import os
-import pytesseract, cv2, requests, re, sqlite3
-import numpy as np
+import re
+import sqlite3
 from datetime import datetime
-
-pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 TOKEN = os.getenv("TOKEN")
 
 CHANNEL_THUE_XE = 1439183974646681641
 CHANNEL_CHOT_SO = 1439184035271151667
-CHANNEL_BLACKLIST = 1462332169333772360
 CHANNEL_COUNTDOWN = 1473627587912667209
 
 intents = discord.Intents.default()
@@ -28,9 +25,6 @@ last_embed_content = None
 # ==============================
 conn = sqlite3.connect("data.db")
 cur = conn.cursor()
-cur.execute("CREATE TABLE IF NOT EXISTS blacklist(name TEXT)")
-cur.execute("CREATE TABLE IF NOT EXISTS loyal(name TEXT,count INTEGER)")
-conn.commit()
 
 # ==============================
 # LẤY / TẠO MESSAGE COUNTDOWN
@@ -54,7 +48,7 @@ async def get_countdown_message():
     return countdown_message
 
 # ==============================
-# UPDATE EMBED (ANTI 429)
+# UPDATE EMBED
 # ==============================
 async def update_embed():
     global last_embed_content
@@ -122,26 +116,6 @@ async def countdown_loop():
         await update_embed()
 
 # ==============================
-# OCR
-# ==============================
-def read_img(url):
-    resp = requests.get(url)
-    arr = np.asarray(bytearray(resp.content), dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=2, fy=2)
-    text = pytesseract.image_to_string(gray, lang="eng+jpn+vie")
-    return text
-
-def detect_names(text):
-    names = re.findall(r'[A-Z][a-zA-Z0-9_]{2,}', text)
-    return list(set(names))
-
-def extract_money(text):
-    nums = re.findall(r'(\d+)k', text.lower())
-    return sum(int(n) * 1000 for n in nums)
-
-# ==============================
 # MESSAGE EVENT
 # ==============================
 @bot.event
@@ -153,7 +127,6 @@ async def on_message(message):
 
     content = message.content.lower()
 
-    # ===== NAME + TIME + MONEY =====
     match_full = re.search(r'(\w+)\s+(\d+h\d*p?|\d+h|\d+p)\s+(\d+)k', content)
 
     if match_full:
@@ -186,19 +159,11 @@ async def on_message(message):
             await message.channel.send(f"⏰ Đã thêm {name} - {time_str} - {money}k")
             await update_embed()
 
-    # ===== BLACKLIST =====
-    if message.channel.id == CHANNEL_BLACKLIST:
-        for att in message.attachments:
-            text = read_img(att.url)
-            names = detect_names(text)
-            for name in names:
-                cur.execute("INSERT INTO blacklist VALUES(?)",(name,))
-                conn.commit()
-                await message.channel.send(f"⛔ Đã lưu blacklist: {name}")
-
-    # ===== THUÊ XE (CỘNG TIỀN) =====
+    # ===== CỘNG TIỀN =====
     if message.channel.id == CHANNEL_THUE_XE:
-        money = extract_money(message.content)
+        nums = re.findall(r'(\d+)k', message.content.lower())
+        money = sum(int(n) * 1000 for n in nums)
+
         if money > 0:
             daily_total += money
             await message.channel.send(f"💰 +{money:,}đ")
@@ -206,7 +171,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ==============================
-# !huygio
+# HỦY GIỜ
 # ==============================
 @bot.command()
 async def huygio(ctx, name: str):
@@ -224,31 +189,35 @@ async def huygio(ctx, name: str):
         await ctx.send("❌ Không tìm thấy tên")
 
 # ==============================
-# !doi
+# THÊM GIỜ
 # ==============================
 @bot.command()
-async def doi(ctx, name1: str, name2: str):
+async def them(ctx, name: str, time_str: str):
 
-    t1 = None
-    t2 = None
+    hours = 0
+    mins = 0
+
+    h = re.search(r'(\d+)h', time_str)
+    m = re.search(r'(\d+)p', time_str)
+
+    if h:
+        hours = int(h.group(1))
+    if m:
+        mins = int(m.group(1))
+
+    add_seconds = hours * 3600 + mins * 60
 
     for t in timers:
-        if t["name"].lower() == name1.lower():
-            t1 = t
-        if t["name"].lower() == name2.lower():
-            t2 = t
+        if t["name"].lower() == name.lower():
+            t["end"] += add_seconds
+            await ctx.send(f"⏱ Đã thêm {time_str} cho {name}")
+            await update_embed()
+            return
 
-    if not t1 or not t2:
-        await ctx.send("❌ Không tìm thấy một trong hai tên")
-        return
-
-    t1["end"], t2["end"] = t2["end"], t1["end"]
-
-    await ctx.send(f"🔄 Đã đổi giờ giữa {name1} và {name2}")
-    await update_embed()
+    await ctx.send("❌ Không tìm thấy người")
 
 # ==============================
-# CHỐT SỔ NGÀY
+# CHỐT SỔ
 # ==============================
 @tasks.loop(minutes=1)
 async def daily_report():
@@ -266,7 +235,7 @@ async def daily_report():
 # ==============================
 @bot.event
 async def on_ready():
-    print("🔥 BOT ONLINE FULL VERSION!!!")
+    print("🔥 BOT ONLINE")
 
     if not countdown_loop.is_running():
         countdown_loop.start()
@@ -276,6 +245,7 @@ async def on_ready():
 
     await update_embed()
 
+bot.run(TOKEN)
 bot.run(TOKEN)
 
 
