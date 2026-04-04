@@ -1,3 +1,4 @@
+```python
 import discord
 from discord.ext import commands, tasks
 import os
@@ -95,7 +96,7 @@ async def update_embed():
         pass
 
 # ==============================
-# LOOP COUNTDOWN
+# LOOP COUNTDOWN (ĐÃ THÊM CẢNH BÁO 10P)
 # ==============================
 @tasks.loop(seconds=5)
 async def countdown_loop():
@@ -103,7 +104,17 @@ async def countdown_loop():
     expired = []
 
     for t in timers[:]:
-        if t["end"] <= now:
+        remaining = t["end"] - now
+
+        # ⚠️ CẢNH BÁO 10 PHÚT
+        if remaining <= 600 and not t.get("warned", False):
+            channel = bot.get_channel(CHANNEL_THUE_XE)
+            if channel:
+                await channel.send(f"⚠️ {t['name']} còn 10 phút nữa hết giờ!")
+            t["warned"] = True
+
+        # 🔔 HẾT GIỜ
+        if remaining <= 0:
             expired.append(t)
 
     for t in expired:
@@ -153,7 +164,8 @@ async def on_message(message):
             timers.append({
                 "name": name,
                 "end": end_time,
-                "money": money
+                "money": money,
+                "warned": False
             })
 
             await message.channel.send(f"⏰ Đã thêm {name} - {time_str} - {money}k")
@@ -231,6 +243,61 @@ async def daily_report():
         daily_total = 0
 
 # ==============================
+# CHECKTIME
+# ==============================
+@bot.command()
+async def checktime(ctx):
+
+    now = datetime.now().timestamp()
+    active_list = []
+
+    for data in timers:
+        remaining = int(data["end"] - now)
+        if remaining > 0:
+            active_list.append((data["name"], remaining, data["money"]))
+
+    if not active_list:
+        await ctx.send("❌ Không có ai đang thuê")
+        return
+
+    active_list.sort(key=lambda x: x[1])
+
+    msg = "⏰ **DANH SÁCH ĐANG THUÊ**\n\n"
+
+    for name, remaining, money in active_list:
+        h = remaining // 3600
+        m = (remaining % 3600) // 60
+        s = remaining % 60
+
+        msg += f"{name} ➜ {h:02}:{m:02}:{s:02} | {money}k\n"
+
+    await ctx.send(msg)
+
+# ==============================
+# ĐỔI GIỜ
+# ==============================
+@bot.command()
+async def doi(ctx, name1: str, name2: str):
+
+    t1 = None
+    t2 = None
+
+    for t in timers:
+        if t["name"].lower() == name1.lower():
+            t1 = t
+        if t["name"].lower() == name2.lower():
+            t2 = t
+
+    if not t1 or not t2:
+        await ctx.send("❌ Không tìm thấy một trong hai tên")
+        return
+
+    t1["end"], t2["end"] = t2["end"], t1["end"]
+
+    await ctx.send(f"🔄 Đã đổi giờ giữa {name1} và {name2}")
+    await update_embed()
+
+# ==============================
 # READY
 # ==============================
 @bot.event
@@ -246,6 +313,4 @@ async def on_ready():
     await update_embed()
 
 bot.run(TOKEN)
-
-
-
+```
