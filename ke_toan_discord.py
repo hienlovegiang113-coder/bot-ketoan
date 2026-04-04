@@ -312,4 +312,3 @@ async def on_ready():
     await update_embed()
 
 bot.run(TOKEN)
-```
